@@ -4,12 +4,23 @@ from urllib.parse import urljoin
 from pyquery import PyQuery as pq
 import time
 import json
+import re
+from motor.motor_asyncio import AsyncIOMotorClient
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
 
+# 定义MongoDB的连接字符串
+MONGO_CONNECTION_STRING = 'mongodb://localhost:27017'
+MONGO_DB_NAME = 'movies0202'
+MONGO_COLLECTION_NAME = 'movies0202'
+
+client = AsyncIOMotorClient(MONGO_CONNECTION_STRING)
+db = client[MONGO_DB_NAME]
+collection = db[MONGO_COLLECTION_NAME]
+
 BASE_URL = 'https://ssr1.scrape.center/'
-PAGE_NUM = 2
+PAGE_NUM = 10
 DETAIL_URL = []
 
 # 可通过信号量控制并发数
@@ -45,7 +56,7 @@ async def scrape_index(context, page_id):
         await page_obj.close()
         return html
 
-async def parse_index(html):
+def parse_index(html):
     doc = pq(html)
     for item in doc('.el-card .name').items():
         url = urljoin(BASE_URL, item.attr('href'))
@@ -54,7 +65,7 @@ async def parse_index(html):
 
 async def process_index(context, page_id):
     html = await scrape_index(context, page_id)
-    await parse_index(html)
+    parse_index(html)
     logging.info('第%d页抓取完毕', page_id)
 
 async def scrape_detail(context, url):
@@ -64,21 +75,45 @@ async def scrape_detail(context, url):
         await page_obj.close()
         return html
 
-async def parse_detail(html):
-    doc = pq(html)
-    name = doc('.m-b-sm').text()
+def parse_detail(html):
+    doc = pq(html)   # 将源代码初始化为PyQuery对象
+    cover = doc('img.cover').attr('src')
+    name = doc('a > h2').text()
     categories = [item.text() for item in doc('.categories button span').items()]
+    published_at = doc('.info:contains(上映)').text()
+    published_at = re.search(r'\d{4}-\d{2}-\d{2}', published_at).group(0) \
+        if published_at and re.search(r'\d{4}-\d{2}-\d{2}', published_at) else None
     drama = doc('.drama p').text()
+    score = doc('.score').text()
+    score = float(score) if score else None
     return {
+        'cover': cover,
         'name': name,
         'categories': categories,
-        'drama': drama
+        'published_at': published_at,
+        'drama': drama,
+        'score': score
     }
+
+'''
+程序作用: 保存数据到mongodb
+参数: data (数据)
+返回值: 无
+'''
+async def save_data(data):
+    logging.info('Save data %s', data)
+    if data:
+        return await     collection.update_one({
+        'name': data.get('name')
+        }, {
+            '$set': data
+        }, upsert=True
+    )
 
 async def process_detail(context, url):
     html = await scrape_detail(context, url)
-    data = await parse_detail(html)
-    logging.info('Get detail data %s', data)
+    data = parse_detail(html)
+    await save_data(data)
 
 async def main():
     async with async_playwright() as playwright:
