@@ -19,8 +19,12 @@ client = AsyncIOMotorClient(MONGO_CONNECTION_STRING)
 db = client[MONGO_DB_NAME]
 collection = db[MONGO_COLLECTION_NAME]
 
-BASE_URL = 'https://ssr1.scrape.center/'
-PAGE_NUM = 10
+BASE_URL = 'https://login2.scrape.center/'
+USERNAME = 'admin'
+PASSWORD = 'admin'
+COOKIE_FILE = 'cookies.json'
+
+PAGE_NUM = 1
 DETAIL_URL = []
 
 # 可通过信号量控制并发数
@@ -42,6 +46,35 @@ async def scrape_api(page_obj, url):
         return await page_obj.content()
     except Exception as e:
         logging.error('error occurred while scraping %s', url, exc_info=True)
+
+'''
+程序作用: 完成网站模拟登录,并保存cookies
+参数: page_obj (页面对象), url (爬取页面地址)
+返回值: storage (登录后的cookies, 字典类型)
+'''
+async def simulate_login(url):
+    async with async_playwright() as playwright:
+        chromium = playwright.chromium
+        browser = await chromium.launch(headless=False)
+        context = await browser.new_context()
+        page = await context.new_page()
+        try:
+            logging.info('Start logging in %s...', url)
+            await page.goto(url)
+            await page.wait_for_load_state("networkidle")
+            await page.locator('input[name="username"]').fill(USERNAME)
+            await page.locator('input[name="password"]').fill(PASSWORD)
+            await page.locator('input[type="submit"]').click()
+            await page.wait_for_load_state("networkidle")
+            # save storage_state to file
+            storage = await context.storage_state(path=COOKIE_FILE)
+            logging.info('Cookies is saved to %s: \n %s', COOKIE_FILE, storage)
+            await page.close()
+            await context.close()
+            await browser.close()
+            return storage
+        except Exception as e:
+            logging.error('error occurred while scraping %s', url, exc_info=True)
 
 '''
 程序作用: 爬取指定页码,返回页面代码源文档
@@ -116,42 +149,23 @@ async def process_detail(context, url):
     await save_data(data)
 
 async def main():
+    await simulate_login(BASE_URL)
+
     async with async_playwright() as playwright:
         chromium = playwright.chromium
         browser = await chromium.launch(headless=False)
-        context = await browser.new_context(
-            http_credentials={
-                'username': 'admin',
-                'password': 'admin'
-            }
-        )
-        page = await context.new_page()
-        html = await scrape_api(page, BASE_URL)
-        print(html)
-        # Save cookies to a file
-        cookies = await context.cookies()
-        with open('cookies.json', 'w', encoding='utf-8-sig') as f:
-            json.dump(cookies, f, ensure_ascii=False)
-        await context.close()
-        await browser.close()
-    async with async_playwright() as playwright:
-        chromium = playwright.chromium
-        browser = await chromium.launch(headless=False)
-        # Load cookies from a file
-        cookies = json.load(open('cookies.json', 'r'))
-        context_index = await browser.new_context(storage_state=cookies)
+        context_index = await browser.new_context(storage_state=COOKIE_FILE)
         index_scrape_task = [asyncio.create_task(process_index(context_index, page_id)) 
                              for page_id in range(1, PAGE_NUM + 1)]
         done, pending = await asyncio.wait(index_scrape_task, timeout=None)
         print(DETAIL_URL)
         await context_index.close()
         await browser.close()
+
     async with async_playwright() as playwright:
         chromium = playwright.chromium
         browser = await chromium.launch(headless=False)
-        # Load cookies from a file
-        cookies = json.load(open('cookies.json', 'r'))
-        context_detail = await browser.new_context(storage_state=cookies)
+        context_detail = await browser.new_context(storage_state=COOKIE_FILE)
         detail_scrape_task = [asyncio.create_task(process_detail(context_detail, url)) 
                               for url in DETAIL_URL]
         done, pending = await asyncio.wait(detail_scrape_task, timeout=None)
