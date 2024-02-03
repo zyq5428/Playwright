@@ -73,13 +73,52 @@ context_index = await browser.new_context(storage_state="state.json")
 ### JWT(JSON Web Token)的登录验证
 
 #### 什么是JWT（what）
+
 * JWT(JSON Web Token)是一个开放标准(RFC 7519)，它定义了一种紧凑且自包含的方式，以JSON对象的形式在各方之间安全地传输信息。
 * JWT是一个数字签名，生成的信息是可以验证并被信任的。
 * 使用密钥(使用HMAC算法)或使用RSA或ECDSA的公钥/私钥对JWT进行签名。
 * JWT是目前最流行的跨域认证解决方案
 * 
 #### JWT令牌结构
+
 * SON Web令牌以紧凑的形式由三部分组成，这些部分由点（.）分隔，分别是：
   * Header
   * Payload
   * Signature
+
+#### requests进行JWT的保存和加载
+
+    可使用下面的示例进行：
+```  {python .line-numbers highlight=[21]}
+import requests
+from urllib.parse import urljoin
+
+BASE_URL = 'https://login3.scrape.center/'
+LOGIN_URL = urljoin(BASE_URL, '/api/login')
+INDEX_URL = urljoin(BASE_URL, '/api/book')
+USERNAME = 'admin'
+PASSWORD = 'admin'
+
+response_login = requests.post(LOGIN_URL, json={
+   'username': USERNAME,
+   'password': PASSWORD
+})
+
+data = response_login.json()
+print('Response JSON', data)
+jwt = data.get('token')
+print('JWT', jwt)
+
+headers = {
+   'Authorization': f'jwt {jwt}'
+}
+
+response_index = requests.get(INDEX_URL, params={
+   'limit': 18,
+   'offset': 0
+}, headers=headers)
+
+print('Response Status', response_index.status_code)
+print('Response URL', response_index.url)
+print('Response Data', response_index.json())
+```
