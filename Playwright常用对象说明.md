@@ -63,9 +63,23 @@ async def simulate_login(url):
     Web 应用程序使用基于 cookie 或基于令牌的身份验证，其中经过身份验证的状态存储为cookie或本地存储。Playwright 提供browserContext.storageState([options])方法，可用于从经过身份验证的上下文中检索存储状态，然后创建具有预填充状态的新上下文。
     Cookie 和本地存储状态可以跨不同的浏览器使用。它们取决于您的应用程序的身份验证模型：某些应用程序可能需要 cookie 和本地存储。
     采用以下方式就可以实现保存和加载cookies：
-```  {python .line-numbers highlight=[1]}
+```  {python .line-numbers highlight=[2， 4]}
 # 保存storage state 到指定的文件
 storage = await context.storage_state(path="state.json")
 # 加载storage state 到指定的文件
 context_index = await browser.new_context(storage_state="state.json")
 ```
+
+### JWT(JSON Web Token)的登录验证
+
+#### 什么是JWT（what）
+* JWT(JSON Web Token)是一个开放标准(RFC 7519)，它定义了一种紧凑且自包含的方式，以JSON对象的形式在各方之间安全地传输信息。
+* JWT是一个数字签名，生成的信息是可以验证并被信任的。
+* 使用密钥(使用HMAC算法)或使用RSA或ECDSA的公钥/私钥对JWT进行签名。
+* JWT是目前最流行的跨域认证解决方案
+* 
+#### JWT令牌结构
+* SON Web令牌以紧凑的形式由三部分组成，这些部分由点（.）分隔，分别是：
+  * Header
+  * Payload
+  * Signature
