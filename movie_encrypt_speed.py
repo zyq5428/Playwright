@@ -12,22 +12,22 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s: %(m
 
 # 定义MongoDB的连接字符串
 MONGO_CONNECTION_STRING = 'mongodb://localhost:27017'
-MONGO_DB_NAME = 'movies0202'
-MONGO_COLLECTION_NAME = 'movies0202'
+MONGO_DB_NAME = 'movies0204'
+MONGO_COLLECTION_NAME = 'movies0204'
 
 client = AsyncIOMotorClient(MONGO_CONNECTION_STRING)
 db = client[MONGO_DB_NAME]
 collection = db[MONGO_COLLECTION_NAME]
 
-BASE_URL = 'https://www.qzsc.cc/'
+BASE_URL = 'https://spa6.scrape.center/'
 
 # Setting
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36'
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0'
 USERNAME = 'admin'
 PASSWORD = 'admin'
 COOKIE_FILE = 'cookies.json'
 
-PAGE_NUM = 1
+PAGE_NUM = 10
 DETAIL_URL = []
 
 # 可通过信号量控制并发数
@@ -52,6 +52,7 @@ async def scrape_api(page_obj, url):
         return await page_obj.content()
     except Exception as e:
         logging.error('error occurred while scraping %s', url, exc_info=True)
+
 
 '''
 程序作用: 完成网站模拟登录,并保存cookies
@@ -102,15 +103,12 @@ async def scrape_index(context, page_id):
 
 def parse_index(html):
     doc = pq(html)
+    detail_url = []
     for item in doc('.el-card .name').items():
         url = urljoin(BASE_URL, item.attr('href'))
         logging.info('Get detail url %s', url)
-        DETAIL_URL.append(url)
-
-async def process_index(context, page_id):
-    html = await scrape_index(context, page_id)
-    parse_index(html)
-    logging.info('第%d页抓取完毕', page_id)
+        detail_url.append(url)
+    return detail_url
 
 async def scrape_detail(context, url):
     async with sem_detail:
@@ -145,7 +143,7 @@ def parse_detail(html):
 返回值: 无
 '''
 async def save_data(data):
-    logging.info('Save data %s', data)
+    # logging.info('Save data:\n %s', data)
     if data:
         return await     collection.update_one({
         'name': data.get('name')
@@ -154,10 +152,45 @@ async def save_data(data):
         }, upsert=True
     )
 
+# async def process_detail(context, url):
+#     html = await scrape_detail(context, url)
+#     data = parse_detail(html)
+#     await save_data(data)
+
+'''
+程序作用: 爬取指定页面,返回响应的数据
+参数: page_obj (页面对象), url (爬取页面地址)
+返回值: page_obj.content() (返回响应的数据)
+'''
+async def scrape_response(page_obj, url):
+    async def on_response(response):
+        if '/api/movie/' in response.url and response.status == 200:
+            # logging.info('Get response: \n%s', await response.json())
+            # return response.json()
+            await save_data(await response.json())
+
+    await page_obj.route(re.compile(r"(\.png)|(\.jpg)"), lambda route: route.abort())
+    page_obj.on('response', on_response)
+    logging.info('Scraping %s...', url)
+    try:
+        await page_obj.goto(url)
+        await page_obj.wait_for_load_state("networkidle")
+    except Exception as e:
+        logging.error('error occurred while scraping %s', url, exc_info=True)
+
 async def process_detail(context, url):
-    html = await scrape_detail(context, url)
-    data = parse_detail(html)
-    await save_data(data)
+    async with sem_detail:
+        page_obj = await context.new_page()
+        await scrape_response(page_obj, url)
+        await page_obj.close()
+
+async def process_index(context, page_id):
+    html = await scrape_index(context, page_id)
+    detail_url = parse_index(html)
+    detail_scrape_task = [asyncio.create_task(process_detail(context, url)) for url in detail_url]
+    done, pending = await asyncio.wait(detail_scrape_task, timeout=None)
+    logging.info('第%d页抓取完毕', page_id)
+
 
 async def main():
     # await simulate_login(BASE_URL)
@@ -165,34 +198,13 @@ async def main():
     async with async_playwright() as playwright:
         chromium = playwright.chromium
         browser = await chromium.launch(headless=False)
-        context = await browser.new_context(user_agent = USER_AGENT)
-        page = await context.new_page()
-        html = await scrape_api(page, BASE_URL)
-        print(html)
-        await page.close()
-        await context.close()
+        # browser = await chromium.launch()
+        context_index = await browser.new_context(user_agent = USER_AGENT)
+        index_scrape_task = [asyncio.create_task(process_index(context_index, page_id)) 
+                             for page_id in range(1, PAGE_NUM + 1)]
+        done, pending = await asyncio.wait(index_scrape_task, timeout=None)
+        await context_index.close()
         await browser.close()
-
-    # async with async_playwright() as playwright:
-    #     chromium = playwright.chromium
-    #     browser = await chromium.launch(headless=False)
-    #     context_index = await browser.new_context(storage_state=COOKIE_FILE)
-    #     index_scrape_task = [asyncio.create_task(process_index(context_index, page_id)) 
-    #                          for page_id in range(1, PAGE_NUM + 1)]
-    #     done, pending = await asyncio.wait(index_scrape_task, timeout=None)
-    #     print(DETAIL_URL)
-    #     await context_index.close()
-    #     await browser.close()
-
-    # async with async_playwright() as playwright:
-    #     chromium = playwright.chromium
-    #     browser = await chromium.launch(headless=False)
-    #     context_detail = await browser.new_context(storage_state=COOKIE_FILE)
-    #     detail_scrape_task = [asyncio.create_task(process_detail(context_detail, url)) 
-    #                           for url in DETAIL_URL]
-    #     done, pending = await asyncio.wait(detail_scrape_task, timeout=None)
-    #     await context_detail.close()
-    #     await browser.close()
 
 if __name__ == '__main__':
     start_time = time.time()
