@@ -36,10 +36,10 @@ PASSWORD = 'admin'
 COOKIE_FILE = 'cookies.json'
 
 PAGE_NUM = 1
-DETAIL_URL = []
+ACCESS_FAILED_URL = []
 
 # 可通过信号量控制并发数
-CONCURRENCY_INDEX_VALUE = 10
+CONCURRENCY_INDEX_VALUE = 5
 CONCURRENCY_DETAIL_VALUE = 10
 sem_index = asyncio.Semaphore(CONCURRENCY_INDEX_VALUE)
 sem_detail = asyncio.Semaphore(CONCURRENCY_DETAIL_VALUE)
@@ -125,29 +125,31 @@ async def scrape_detail(context, url):
 
 def parse_detail(html):
     doc = pq(html)   # 将源代码初始化为PyQuery对象
-    # cover = doc('img.cover').attr('src')
-    name = doc('#info h1').text()
-    print(name)
-
-# def parse_detail(html):
-#     doc = pq(html)   # 将源代码初始化为PyQuery对象
-#     cover = doc('img.cover').attr('src')
-#     name = doc('a > h2').text()
-#     categories = [item.text() for item in doc('.categories button span').items()]
-#     published_at = doc('.info:contains(上映)').text()
-#     published_at = re.search(r'\d{4}-\d{2}-\d{2}', published_at).group(0) \
-#         if published_at and re.search(r'\d{4}-\d{2}-\d{2}', published_at) else None
-#     drama = doc('.drama p').text()
-#     score = doc('.score').text()
-#     score = float(score) if score else None
-#     return {
-#         'cover': cover,
-#         'name': name,
-#         'categories': categories,
-#         'published_at': published_at,
-#         'drama': drama,
-#         'score': score
-#     }
+    try:
+        name = doc('#info h1').text()
+        author = doc('#info p').text()
+        author = re.search(r'者：(.*)', doc('#info p:contains(者：)').text()).group(1)
+        last_update = re.search(r'更新：(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', doc('#info p:contains(更新：)').text()).group(1)
+        brief = doc('#intro p').text()
+        chapters = doc('.box_con #list a')
+        chapter_info = []
+        for chapter in chapters.items():
+            url = urljoin(BASE_URL, chapter.attr('href'))
+            title = chapter.text()
+            chapter_info.append({
+                'url': url,
+                'title': title
+            })
+        return {
+            'name': name,
+            'author': author,
+            'last_update': last_update,
+            'brief': brief,
+            'chapter_info': chapter_info
+        }
+    except Exception as e:
+        logging.info('Failed to parse the website', exc_info=True)
+        return None
 
 '''
 程序作用: 保存数据到mongodb
@@ -168,9 +170,11 @@ async def process_detail(context, url):
     html = await scrape_detail(context, url)
     if html == None:
         logging.info('The website cannot be accessed: %s', url)
+        ACCESS_FAILED_URL.append[url]
     else:
         data = parse_detail(html)
-        # await save_data(data)
+        if data:
+            await save_data(data)
 
 
 async def process_category(context, category):
