@@ -5,11 +5,13 @@ from pyquery import PyQuery as pq
 import time
 import json
 import re
+import os
 from motor.motor_asyncio import AsyncIOMotorClient
 import logging
 
-logging.basicConfig(level=logging.WARN, format='%(asctime)s - %(levelname)s: %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
 
+# 推荐文档：https://www.cnblogs.com/aduner/p/13532504.html
 # 定义MongoDB的连接字符串
 MONGO_CONNECTION_STRING = 'mongodb://localhost:27017'
 MONGO_DB_NAME = 'novel'
@@ -187,33 +189,29 @@ async def process_category(context, category):
     done, pending = await asyncio.wait(detail_scrape_task, timeout=None)
 
 async def main():
-    # await simulate_login(BASE_URL)
-    global ACCESS_FAILED_URL
+    chapter_info = []
+    os.chdir('novel')
+    async for document in collection.find({}):  # 查询所有文档
+        name = document.get('name')
+        if not os.path.exists(name):
+            os.mkdir(name)
+            os.chdir(name)
+            chapter_info = document.get('chapter_info')
+            break
+        else:
+            logging.info('小说已经存在: %s', name)
+    for id, info in enumerate(chapter_info):
+        logging.info('第 %d 章： %s, url: %s', id + 1, info.get('title'), info.get('url'))
 
-    async with async_playwright() as playwright:
-        chromium = playwright.chromium
-        browser = await chromium.launch(headless=False)
-        context_category = await browser.new_context(user_agent = USER_AGENT)
-        category_scrape_task = [asyncio.create_task(process_category(context_category, key)) 
-                             for key, value in cat_name.items()]
-        done, pending = await asyncio.wait(category_scrape_task, timeout=None)
-        await context_category.close()
-        await browser.close()
-
-    if ACCESS_FAILED_URL:
-        async with async_playwright() as playwright:
-            chromium = playwright.chromium
-            browser = await chromium.launch(headless=False)
-            context_retry = await browser.new_context(user_agent = USER_AGENT)
-            retry_scrape_task = [asyncio.create_task(process_detail(context_retry, url)) 
-                                for url in ACCESS_FAILED_URL]
-            ACCESS_FAILED_URL = []
-            done, pending = await asyncio.wait(retry_scrape_task, timeout=None)
-            await context_category.close()
-            await browser.close()
-
-        if ACCESS_FAILED_URL:
-            logging.error('数据抓取完毕,以下网址二次抓取仍不成功: \n %s' % ACCESS_FAILED_URL)
+    # async with async_playwright() as playwright:
+    #     chromium = playwright.chromium
+    #     browser = await chromium.launch(headless=False)
+    #     context_category = await browser.new_context(user_agent = USER_AGENT)
+    #     category_scrape_task = [asyncio.create_task(process_category(context_category, key)) 
+    #                          for key, value in cat_name.items()]
+    #     done, pending = await asyncio.wait(category_scrape_task, timeout=None)
+    #     await context_category.close()
+    #     await browser.close()
 
 if __name__ == '__main__':
     start_time = time.time()
