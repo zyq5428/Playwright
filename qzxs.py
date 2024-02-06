@@ -157,7 +157,7 @@ def parse_detail(html):
 返回值: 无
 '''
 async def save_data(data):
-    logging.info('Save data %s', data)
+    # logging.info('Save data %s', data)
     if data:
         return await     collection.update_one({
         'name': data.get('name')
@@ -170,7 +170,7 @@ async def process_detail(context, url):
     html = await scrape_detail(context, url)
     if html == None:
         logging.info('The website cannot be accessed: %s', url)
-        ACCESS_FAILED_URL.append[url]
+        ACCESS_FAILED_URL.append(url)
     else:
         data = parse_detail(html)
         if data:
@@ -182,12 +182,13 @@ async def process_category(context, category):
     html = await scrape_category(context, url)
     # print(html)
     updated_novel_urls = parse_category(html)
-    logging.info('%s 分类页抓取完毕', cat_name[category])
+    logging.info('%s 分类页抓取完毕, 需抓取 %d 个小说', cat_name[category], len(updated_novel_urls))
     detail_scrape_task = [asyncio.create_task(process_detail(context, url)) for url in updated_novel_urls]
     done, pending = await asyncio.wait(detail_scrape_task, timeout=None)
 
 async def main():
     # await simulate_login(BASE_URL)
+    global ACCESS_FAILED_URL
 
     async with async_playwright() as playwright:
         chromium = playwright.chromium
@@ -198,6 +199,20 @@ async def main():
         done, pending = await asyncio.wait(category_scrape_task, timeout=None)
         await context_category.close()
         await browser.close()
+
+    if ACCESS_FAILED_URL:
+        async with async_playwright() as playwright:
+            chromium = playwright.chromium
+            browser = await chromium.launch(headless=False)
+            context_retry = await browser.new_context(user_agent = USER_AGENT)
+            retry_scrape_task = [asyncio.create_task(process_detail(context_retry, url)) 
+                                for url in ACCESS_FAILED_URL]
+            ACCESS_FAILED_URL = []
+            done, pending = await asyncio.wait(retry_scrape_task, timeout=None)
+            await context_category.close()
+            await browser.close()
+
+        logging.info('数据抓取完毕,以下网址二次抓取仍不成功: \n %s' % ACCESS_FAILED_URL)
 
 if __name__ == '__main__':
     start_time = time.time()
