@@ -1,0 +1,10 @@
+2024-02-18 16:46:20,090 - ERROR: Task exception was never retrieved
+future: <Task finished name='Task-19' coro=<get_chapter_text() done, defined at E:\Playwright\novel_download.py:284> exception=RuntimeError("Task <Task pending name='Task-19' coro=<get_chapter_text() running at E:\\Playwright\\novel_download.py:285> cb=[_wait.<locals>._on_completion() at D:\\Program Files\\anaconda3\\lib\\asyncio\\tasks.py:513]> got Future <Future pending> attached to a different loop")>
+Traceback (most recent call last):
+  File "E:\Playwright\novel_download.py", line 285, in get_chapter_text
+    async with sem_detail:
+  File "D:\Program Files\anaconda3\lib\asyncio\locks.py", line 14, in __aenter__
+    await self.acquire()
+  File "D:\Program Files\anaconda3\lib\asyncio\locks.py", line 413, in acquire
+    await fut
+RuntimeError: Task <Task pending name='Task-19' coro=<get_chapter_text() running at E:\Playwright\novel_download.py:285> cb=[_wait.<locals>._on_completion() at D:\Program Files\anaconda3\lib\asyncio\tasks.py:513]> 

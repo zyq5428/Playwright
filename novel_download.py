@@ -26,6 +26,7 @@ NOVEL_URL = 'http://www.qzxs.cc/xiaoshuo/rbd2vo1/'
 CHAPTER_URL = 'http://www.qzxs.cc/xiaoshuo/rbd2vo1/1.html'
 BOOK_NAME = ''
 BOOK_CHAPTER_COLLECTION_NAME = '章节链接'
+BOOK_TEXT_COLLECTION_NAME = '文本'
 
 # Setting
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36'
@@ -39,8 +40,8 @@ ACCESS_FAILED_URL = []
 # 可通过信号量控制并发数
 CONCURRENCY_INDEX_VALUE = 5
 CONCURRENCY_DETAIL_VALUE = 10
+CONCURRENCY_RETRY_VALUE = 10
 sem_index = asyncio.Semaphore(CONCURRENCY_INDEX_VALUE)
-sem_detail = asyncio.Semaphore(CONCURRENCY_DETAIL_VALUE)
 
 '''
 程序作用: 爬取指定页面,返回页面代码源文档
@@ -259,7 +260,7 @@ async def get_chapter_url():
 def parse_chapter_text(index, html):
     doc = pq(html)
     title = doc('.read .booktitle h1').text()
-    content = doc('.read .content').text()
+    content = doc('.read .content p').text()
     logging.info('Chapter %d: %s \n %s', index, title, content)
     return {
         'index': index,
@@ -267,41 +268,88 @@ def parse_chapter_text(index, html):
         'content': content
     }
 
-async def get_chapter_text(context, index, url):
-    async with sem_detail:
+async def save_novel_text(data):
+    # logging.info('Save data %s', data)
+    global BOOK_NAME
+    db = client[BOOK_NAME]
+    collection = db[BOOK_TEXT_COLLECTION_NAME]
+
+    if data:
+        return await     collection.update_one({
+        'name': data.get('index')
+        }, {
+            '$set': data
+        }, upsert=True
+    )
+
+# https://deepinout.com/mongodb/mongodb-questions/233_mongodb_how_to_check_if_a_pymongo_cursor_has_query_results.html
+async def check_exist(index):
+    global BOOK_NAME
+    db = client[BOOK_NAME]
+    collection = db[BOOK_TEXT_COLLECTION_NAME]
+    result = await collection.find_one({index: {'$exists': True}})
+
+async def get_chapter_text(context, index, url, sem):
+    async with sem:
         page_obj = await context.new_page()
         html = await scrape_api(page_obj, url)
-        data = parse_chapter_text(index, html)
+        if html == None:
+            logging.error('The website cannot be accessed: %s', url)
+            ACCESS_FAILED_URL.append({
+                'index': index,
+                'url': url
+            })
+        else:
+            data = parse_chapter_text(index, html)
+            if data:
+                await save_novel_text(data)
         await page_obj.close()
-        return html
-
 
 async def get_chapter_info():
     global BOOK_NAME
+    global ACCESS_FAILED_URL
+
     db = client[BOOK_NAME]
     collection = db[BOOK_CHAPTER_COLLECTION_NAME]
+
+    sem_detail = asyncio.Semaphore(CONCURRENCY_DETAIL_VALUE)
+    sem_retry = asyncio.Semaphore(CONCURRENCY_RETRY_VALUE)
+
     chapter_urls = []
     async for document in collection.find({}):  # 查询所有文档
         if document.get('name') == BOOK_NAME:
             chapter_urls = document.get('chapter_urls')
+
     async with async_playwright() as playwright:
         chromium = playwright.chromium
         browser = await chromium.launch(headless=False)
         context = await browser.new_context(user_agent = USER_AGENT)
-        detail_scrape_task = [asyncio.create_task(get_chapter_text(context, id, url)) for id, url in enumerate(chapter_urls)]
+        detail_scrape_task = [asyncio.create_task(get_chapter_text(context, id, url, sem_detail)) for id, url in enumerate(chapter_urls)]
         done, pending = await asyncio.wait(detail_scrape_task, timeout=None)
+        await context.close()
+        await browser.close()
+
+    while(ACCESS_FAILED_URL):
+        chromium = playwright.chromium
+        browser = await chromium.launch(headless=False)
+        context = await browser.new_context(user_agent = USER_AGENT)
+        retry_scrape_task = [asyncio.create_task(get_chapter_text(context, item.get('index'), item.get('url'), sem_retry)) for item in ACCESS_FAILED_URL]
+        ACCESS_FAILED_URL = []
+        done, pending = await asyncio.wait(retry_scrape_task, timeout=None)
+        await context.close()
+        await browser.close()
 
 async def main():
     # 获取小说章节链接并保存到mongodb
     await get_chapter_url()
 
-    # 获取每个章节的内容并保存到mongodb 
+    # 获取每个章节的内容并保存到mongodb
     await get_chapter_info()
 
 
 
 if __name__ == '__main__':
     start_time = time.time()
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(main())
     end_time = time.time()
     print('程序运行时间为:', end_time - start_time)
