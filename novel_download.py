@@ -29,6 +29,7 @@ BOOK_CHAPTER_COLLECTION_NAME = '章节链接'
 BOOK_TEXT_COLLECTION_NAME = '文本'
 
 # Setting
+HEADLESS = True
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36'
 USERNAME = 'admin'
 PASSWORD = 'admin'
@@ -68,7 +69,7 @@ async def scrape_api(page_obj, url):
 async def simulate_login(url):
     async with async_playwright() as playwright:
         chromium = playwright.chromium
-        browser = await chromium.launch(headless=False)
+        browser = await chromium.launch(headless=HEADLESS)
         context = await browser.new_context()
         page = await context.new_page()
         try:
@@ -114,7 +115,7 @@ async def get_chapter_url():
     global BOOK_NAME
     async with async_playwright() as playwright:
         chromium = playwright.chromium
-        browser = await chromium.launch(headless=False)
+        browser = await chromium.launch(headless=HEADLESS)
         context = await browser.new_context(user_agent = USER_AGENT)
         page_obj = await context.new_page()
 
@@ -241,7 +242,7 @@ async def get_chapter_info():
 
     async with async_playwright() as playwright:
         chromium = playwright.chromium
-        browser = await chromium.launch(headless=False)
+        browser = await chromium.launch(headless=HEADLESS)
         context = await browser.new_context(user_agent = USER_AGENT)
         detail_scrape_task = [asyncio.create_task(get_chapter_text(context, id + 1, url, sem_detail)) for id, url in enumerate(chapter_urls)]
         done, pending = await asyncio.wait(detail_scrape_task, timeout=None)
@@ -253,7 +254,7 @@ async def get_chapter_info():
         logging.warning('Start recrawling the information for the %s time', retry_cnt)
         async with async_playwright() as playwright:
             chromium = playwright.chromium
-            browser = await chromium.launch(headless=False)
+            browser = await chromium.launch(headless=HEADLESS)
             context = await browser.new_context(user_agent = USER_AGENT)
             retry_scrape_task = [asyncio.create_task(get_chapter_text(context, item.get('index'), item.get('url'), sem_retry)) for item in ACCESS_FAILED_URL]
             ACCESS_FAILED_URL = []
