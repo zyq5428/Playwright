@@ -22,13 +22,14 @@ USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 USERNAME = 'admin'
 PASSWORD = 'admin'
 COOKIE_FILE = 'cookies.json'
-LOGGED_LABEL = '登录成功'
+LOGGED_LABEL = '返回'
 
-# CJ_USERNAME = '******'
-# CJ_PASSWORD = '******'
-# SOFT_ID = '******'
+CJ_USERNAME = 'zyq5428'
+CJ_PASSWORD = 'Qayhz5428'
+SOFT_ID = '918592'
 SCREENSHOT_FILE = 'website.png'
 CAPTCHA_FILE = 'captcha.png'
+LOGGED_FILE = 'logged_in.png'
 GET_CAPTCHA_POSITION = False
 PIC_ID = ''
 
@@ -100,12 +101,12 @@ class Chaojiying_Client(object):
 参数: position
 返回值: 无
 '''
-def get_captcha_image(position):
-    x = position.get('x')
-    y = position.get('y')
-    width = position.get('width')
-    height = position.get('height')
-    box = (x, y, x + width, y + height)
+def get_captcha_image(position_full, position_void):
+    x = position_full.get('x')
+    y = position_full.get('y')
+    width = position_full.get('width')
+    height = position_full.get('height')
+    box = (x, y, x + width, y + height - position_void.get('height'))
     logging.info('Captcha box: %s', box)
     with Image.open(SCREENSHOT_FILE) as im:
         im_crop = im.crop(box)
@@ -153,12 +154,38 @@ def get_absolute_positions(base_pos, rel_pos):
     y = base_pos.get('y')
     for position in rel_pos:
         position['x'] = x + position.get('x')
-        position['y'] = x + position.get('y')
+        position['y'] = y + position.get('y')
     return rel_pos
 
 async def sleep_ms_rand(lower, upper):
     ms = random.randint(lower, upper)
     await asyncio.sleep(ms / 1000)
+
+async def fill_user_pwd(page, url):
+    await page.goto(url)
+    await page.wait_for_load_state("networkidle")
+    await page.locator('input[type="text"]').fill(USERNAME)
+    await page.locator('input[type="password"]').fill(PASSWORD)
+    await page.locator('button[type="button"]').click()
+    await page.wait_for_load_state("networkidle")
+
+async def cut_captcha_image(page):
+    await page.locator('.geetest_widget').wait_for()
+    await asyncio.sleep(1)
+    await page.screenshot(path = SCREENSHOT_FILE)
+    captcha_position = await page.locator('.geetest_widget').bounding_box()
+    geetest_process_panel_position = await page.locator('.geetest_widget > .geetest_panel').bounding_box()
+    get_captcha_image(captcha_position, geetest_process_panel_position)
+    return captcha_position
+
+async def save_cookies(context, page):
+    # In order to obtain the token of JWT
+    await page.reload()
+    await page.wait_for_load_state("networkidle")
+    # save storage_state to file
+    storage = await context.storage_state(path=COOKIE_FILE)
+    logging.info('Cookies is saved to %s: \n %s', COOKIE_FILE, storage)
+    await page.screenshot(path = LOGGED_FILE)
 
 '''
 程序作用: 完成网站模拟登录,并保存cookies
@@ -173,18 +200,18 @@ async def simulate_login(url):
         page = await context.new_page()
         try:
             logging.info('Start logging in %s...', url)
-            await page.goto(url)
-            await page.wait_for_load_state("networkidle")
-            await page.locator('input[type="text"]').fill(USERNAME)
-            await page.locator('input[type="password"]').fill(PASSWORD)
-            await page.locator('button[type="button"]').click()
-            await page.wait_for_load_state("networkidle")
-            await page.locator('.geetest_panel_next').wait_for()
-            await page.screenshot(path = SCREENSHOT_FILE)
-            captcha_position = await page.locator('.geetest_widget').bounding_box()
-            get_captcha_image(captcha_position)
+
+            # fill username and password
+            await fill_user_pwd(page, url)
+            
+            # get captcha image and image position
+            captcha_position = await cut_captcha_image(page)
+
+            # get captcha position
             relative_positions = get_relative_positions()
             absolute_positions = get_absolute_positions(captcha_position, relative_positions)
+
+            # click captcha
             for absolute_positon in absolute_positions:
                 logging.info('Click %s', absolute_positon)
                 await page.mouse.click(absolute_positon.get('x'), absolute_positon.get('y'))
@@ -195,13 +222,10 @@ async def simulate_login(url):
             await page.wait_for_load_state("networkidle")
             username = page.get_by_text(LOGGED_LABEL)
             await username.wait_for()
-            # In order to obtain the token of JWT
-            await page.reload()
-            await page.wait_for_load_state("networkidle")
+
             # save storage_state to file
-            storage = await context.storage_state(path=COOKIE_FILE)
-            logging.info('Cookies is saved to %s: \n %s', COOKIE_FILE, storage)
-            # await page.screenshot(path = SCREENSHOT_FILE)
+            await save_cookies(context, page)
+
             await page.close()
             await context.close()
             await browser.close()
@@ -215,10 +239,10 @@ async def main():
     await simulate_login(BASE_URL)
 
 if __name__ == '__main__':
-    chaojiying = Chaojiying_Client(CJ_USERNAME, CJ_PASSWORD, SOFT_ID)	#用户中心>>软件ID 生成一个替换
-    im = open(CAPTCHA_FILE, 'rb').read()	
-    print (chaojiying.PostPic(im, 9004))
-    # start_time = time.time()
-    # asyncio.run(main())
-    # end_time = time.time()
-    # print('程序运行时间为: {:5.2f}'.format(end_time - start_time))
+    # chaojiying = Chaojiying_Client(CJ_USERNAME, CJ_PASSWORD, SOFT_ID)	#用户中心>>软件ID 生成一个替换
+    # im = open(CAPTCHA_FILE, 'rb').read()	
+    # print (chaojiying.PostPic(im, 9004))
+    start_time = time.time()
+    asyncio.run(main())
+    end_time = time.time()
+    print('程序运行时间为: {:5.2f}'.format(end_time - start_time))
