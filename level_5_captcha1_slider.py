@@ -15,7 +15,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
 
-BASE_URL = 'https://captcha3.scrape.center/'
+BASE_URL = 'https://captcha1.scrape.center/'
 
 # Setting
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36 Edg/105.0.1343.42'
@@ -97,22 +97,6 @@ class Chaojiying_Client(object):
         return r.json()
 
 '''
-程序作用:截取浏览器截屏中的验证码部分
-参数: position
-返回值: 无
-'''
-def get_captcha_image(position_full, position_void):
-    x = position_full.get('x')
-    y = position_full.get('y')
-    width = position_full.get('width')
-    height = position_full.get('height')
-    box = (x, y, x + width, y + height - position_void.get('height'))
-    logging.info('Captcha box: %s', box)
-    with Image.open(SCREENSHOT_FILE) as im:
-        im_crop = im.crop(box)
-        im_crop.save(CAPTCHA_FILE)
-
-'''
 程序作用: 通过chaojiying的接口获取验证码的位置
 参数: 无
 返回值: 无
@@ -121,7 +105,7 @@ def get_relative_positions():
     with open(CAPTCHA_FILE, 'rb') as f:
         img = f.read()
         chaojiying = Chaojiying_Client(CJ_USERNAME, CJ_PASSWORD, SOFT_ID)
-        cjy_response = chaojiying.PostPic(img, 9004)
+        cjy_response = chaojiying.PostPic(img, 9202)
         if cjy_response['err_no'] == 0:
             GET_CAPTCHA_POSITION = True
             PIC_ID = cjy_response['pic_id']
@@ -145,17 +129,44 @@ def report_error_id():
     logging.info('Report error response: %s', cjy_response)
 
 '''
+程序作用:截取浏览器截屏中的验证码部分
+参数: position
+返回值: 无
+'''
+def get_captcha_image(position_full):
+    x = position_full.get('x')
+    y = position_full.get('y')
+    width = position_full.get('width')
+    height = position_full.get('height')
+    box = (x, y, x + width, y + height)
+    logging.info('Captcha box: %s', box)
+    with Image.open(SCREENSHOT_FILE) as im:
+        im_crop = im.crop(box)
+        im_crop.save(CAPTCHA_FILE)
+
+def get_elment_center_postion(position):
+    x = position.get('x')
+    y = position.get('y')
+    width = position.get('width')
+    height = position.get('height')
+    x = x + width / 2
+    y = y + height / 2
+    logging.info('Element center position: %s', (x, y))
+    return x, y
+
+'''
 程序作用: 获得验证码在网页中的位置
 参数: 无
 返回值: 无
 '''
 def get_absolute_positions(base_pos, rel_pos):
-    x = base_pos.get('x')
-    y = base_pos.get('y')
-    for position in rel_pos:
-        position['x'] = x + position.get('x')
-        position['y'] = y + position.get('y')
-    return rel_pos
+    if len(rel_pos) == 2:
+        if rel_pos[0].get('x') < rel_pos[1].get('x'):
+            return rel_pos[1].get('x') - rel_pos[0].get('x'), rel_pos[1].get('y') -rel_pos[0].get('y')
+        else:
+            return rel_pos[0].get('x') - rel_pos[1].get('x'), rel_pos[0].get('y') - rel_pos[1].get('y')
+    else:
+        return None
 
 async def sleep_ms_rand(lower, upper):
     ms = random.randint(lower, upper)
@@ -170,13 +181,65 @@ async def fill_user_pwd(page, url):
     await page.wait_for_load_state("networkidle")
 
 async def cut_captcha_image(page):
-    await page.locator('.geetest_widget').wait_for()
-    await asyncio.sleep(1)
+    await page.locator('.geetest_panel_next').wait_for()
     await page.screenshot(path = SCREENSHOT_FILE)
-    captcha_position = await page.locator('.geetest_widget').bounding_box()
-    geetest_process_panel_position = await page.locator('.geetest_widget > .geetest_panel').bounding_box()
-    get_captcha_image(captcha_position, geetest_process_panel_position)
+    captcha_position = await page.locator('.geetest_canvas_slice').bounding_box()
+    get_captcha_image(captcha_position)
     return captcha_position
+
+def get_random_distance(len, step):
+    avg = int(len / step)
+    random_max = int(avg / step)
+    dis_list = []
+    dis_sum = 0
+    if len == 0:
+        for i in range(step):
+            dis = random.randint(0, 3)
+            dis_list.append(dis)
+        return dis_list
+    else: 
+        for i in range(step - 1):
+            dis = int(avg / 2) + random.randint(0, random_max)
+            dis_list.append(dis)
+            dis_sum += dis
+        dis_list.append(len - dis_sum)
+        return dis_list
+
+# 模拟的配置参数
+SLOW_INTERVALS = 0.2
+SLOW_TIME = 500
+QUICK_TIME = 200
+SLOW_STEPS = 5
+QUICK_STEPS = 3
+async def move_slider(x1, y1, Dx, Dy, page):
+    # 模拟人类的鼠标移动轨迹
+    current_x = x1
+    current_y = y1
+
+    Dx1 = Dx * (1 - SLOW_INTERVALS)
+    Dy1 = Dy * (1 - SLOW_INTERVALS)
+    x_list = get_random_distance(Dx1, QUICK_STEPS)
+    y_list = get_random_distance(0, QUICK_STEPS)
+
+    await page.mouse.move(x1, y1)
+    await page.mouse.down()
+    for i in range(QUICK_STEPS):
+        current_x = current_x + x_list[i]
+        current_y = current_y + y_list[i]
+        await page.mouse.move(current_x, current_y)
+        await sleep_ms_rand(int(QUICK_TIME / 2), QUICK_TIME)
+
+    Dx2 = Dx * SLOW_INTERVALS
+    Dy2 = Dy * SLOW_INTERVALS
+    x_list = get_random_distance(Dx2, SLOW_STEPS)
+    y_list = get_random_distance(0, SLOW_STEPS)
+    for i in range(SLOW_STEPS):
+        current_x = current_x + x_list[i]
+        current_y = current_y + y_list[i]
+        await page.mouse.move(current_x, current_y)
+        await sleep_ms_rand(int(SLOW_TIME / 2), SLOW_TIME)
+
+    await page.mouse.up()
 
 async def save_cookies(context, page):
     # In order to obtain the token of JWT
@@ -206,19 +269,18 @@ async def simulate_login(url):
             
             # get captcha image and image position
             captcha_position = await cut_captcha_image(page)
-
+            slider_button_position = await page.locator('.geetest_slider_button').bounding_box()
+            button_x, button_y = get_elment_center_postion(slider_button_position)
+            
             # get captcha position
             relative_positions = get_relative_positions()
-            absolute_positions = get_absolute_positions(captcha_position, relative_positions)
+            offset_x, offset_y = get_absolute_positions(captcha_position, relative_positions)
+            logging.info('Captcha offset position: %s, %s', offset_x, offset_y)
 
-            # click captcha
-            for absolute_positon in absolute_positions:
-                logging.info('Click %s', absolute_positon)
-                await page.mouse.click(absolute_positon.get('x'), absolute_positon.get('y'))
-                await sleep_ms_rand(200, 500)
-            commit_tip = page.locator('.geetest_commit_tip')
-            await commit_tip.wait_for()
-            await commit_tip.click()
+            # move slider
+            await move_slider(button_x, button_y, offset_x, offset_y, page)
+            await page.screenshot(path = 'move_slider.png')
+
             await page.wait_for_load_state("networkidle")
             username = page.get_by_text(LOGGED_LABEL)
             await username.wait_for()
@@ -231,8 +293,8 @@ async def simulate_login(url):
             await browser.close()
         except Exception as e:
             logging.error('error occurred while scraping %s', url, exc_info=True)
-            if GET_CAPTCHA_POSITION == True: 
-                report_error_id()
+            # if GET_CAPTCHA_POSITION == True: 
+            #     report_error_id()
 
 
 async def main():
@@ -241,7 +303,7 @@ async def main():
 if __name__ == '__main__':
     # chaojiying = Chaojiying_Client(CJ_USERNAME, CJ_PASSWORD, SOFT_ID)	#用户中心>>软件ID 生成一个替换
     # im = open(CAPTCHA_FILE, 'rb').read()	
-    # print (chaojiying.PostPic(im, 9004))
+    # print (chaojiying.PostPic(im, 9202))
     start_time = time.time()
     asyncio.run(main())
     end_time = time.time()
