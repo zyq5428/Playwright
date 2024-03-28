@@ -20,7 +20,7 @@ client = AsyncIOMotorClient(MONGO_CONNECTION_STRING)
 db = client[MONGO_DB_NAME]
 collection = db[MONGO_COLLECTION_NAME]
 
-BASE_URL = 'https://login3.scrape.center/'
+BASE_URL = 'https://antispider5.scrape.center/'
 USERNAME = 'admin'
 PASSWORD = 'admin'
 COOKIE_FILE = 'cookies.json'
@@ -30,8 +30,10 @@ PROXY_SERVER = ''
 Direct_IP = 'http://webapi.http.zhimacangku.com/getip?neek=860483b89fc4d67d&num=10&type=2&pro=&city=0&yys=0&port=11&time=4&ts=1&ys=1&cs=1&lb=1&sb=0&pb=4&mr=1&regions='
 proxy = ip_proxy(Direct_IP)
 
-PAGE_NUM = 3
+PAGE_NUM = 10
 DETAIL_URL = []
+
+user_error = '403 Forbidden'
 
 # 可通过信号量控制并发数
 CONCURRENCY_INDEX_VALUE = 10
@@ -107,12 +109,27 @@ async def scrape_index(browser, page_id):
     async with sem_index:
         context = await browser.new_context(
             proxy={'server': PROXY_SERVER}
-            )
+            ) # linux下使用才生效
         index_url = f'{BASE_URL}page/{page_id}'
         page_obj = await context.new_page()
         html = await scrape_api(page_obj, index_url)
         await page_obj.close()
+        await context.close()
         return html
+
+# async def scrape_index(browser, page_id):
+#     async with sem_index:
+#         context = await browser.new_context(
+#             proxy={'server': PROXY_SERVER}
+#             )
+#         page_obj = await context.new_page()
+#         html = await scrape_api(page_obj, "https://httpbin.org/get")
+#         # origin = json.loads(html)['origin']
+#         origin = re.search(r'"origin": "(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', html).group(1)
+#         logging.info('origin IP is %s', origin)
+#         await page_obj.close()
+#         await context.close()
+#         return html
 
 def parse_index(html):
     doc = pq(html)
@@ -175,16 +192,15 @@ async def process_detail(context, url):
 
 async def main():
     # await simulate_login(BASE_URL)
-    set_proxy()
 
-    # async with async_playwright() as playwright:
-    #     chromium = playwright.chromium
-    #     browser = await chromium.launch(headless=False)
-    #     index_scrape_task = [asyncio.create_task(process_index(browser, page_id)) 
-    #                          for page_id in range(1, PAGE_NUM + 1)]
-    #     done, pending = await asyncio.wait(index_scrape_task, timeout=None)
-    #     print(DETAIL_URL)
-    #     await browser.close()
+    async with async_playwright() as playwright:
+        chromium = playwright.chromium
+        browser = await chromium.launch(headless=False)
+        index_scrape_task = [asyncio.create_task(process_index(browser, page_id)) 
+                             for page_id in range(1, PAGE_NUM + 1)]
+        done, pending = await asyncio.wait(index_scrape_task, timeout=None)
+        print(DETAIL_URL)
+        await browser.close()
 
     # async with async_playwright() as playwright:
     #     chromium = playwright.chromium
@@ -198,6 +214,7 @@ async def main():
 
 if __name__ == '__main__':
     start_time = time.time()
+    set_proxy()
     asyncio.run(main())
     end_time = time.time()
     print('程序运行时间为:', end_time - start_time)
