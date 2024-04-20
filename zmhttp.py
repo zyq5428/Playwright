@@ -64,7 +64,7 @@ class ip_proxy:
                 server = ip + ':' + str(port)
                 servers.append(server)
             self.ip = servers
-            return self.ip
+            return servers
         else:
             logging.error('Get proxy Failed')
             return None

@@ -30,7 +30,7 @@ ACCOUNT = [
 
 ERROR_STR = '403 Forbidden.'
 
-Direct_IP = 'http://webapi.http.zhimacangku.com/getip?neek=860483b89fc4d67d&num=10&type=2&pro=&city=0&yys=0&port=11&time=4&ts=1&ys=1&cs=1&lb=1&sb=0&pb=4&mr=1&regions='
+Direct_IP = 'http://webapi.http.zhimacangku.com/getip?neek=860483b89fc4d67d&num=10&type=2&time=4&pro=0&city=0&yys=0&port=11&pack=0&ts=1&ys=1&cs=1&lb=1&sb=&pb=4&mr=3&regions='
 
 '''
 思路一: 出现爬取失败时，保存爬取失败的链接，关闭当前页面，切换新账户后登录，适用于爬取限制没那么严厉的网站。
@@ -93,12 +93,26 @@ class AntiuserSpider:
     参数: cur_proxy (当前代理)
     返回值: 无
     '''
+    # async def choose_proxy(self, cur_proxy=None):
+    #     async with self.proxy_lock:
+    #         if len(self.proxy_list) == 0:
+    #             if self.proxy.get_proxy():
+    #                 self.proxy_list = self.proxy.ip
+    #                 logging.info('New proxy list: \n%s', self.proxy_list)
+    #         self.proxy_server = self.proxy_list[-1]
+    #         self.proxy_list = self.proxy_list[0:-1]
+    #         logging.info('Choose proxy: %s', self.proxy_server)
+
+    '''
+    程序作用: 选择新代理
+    参数: cur_proxy (当前代理)
+    返回值: 无
+    '''
     async def choose_proxy(self, cur_proxy=None):
         async with self.proxy_lock:
-            if len(self.proxy_list) == 0:
-                if self.proxy.get_proxy():
-                    self.proxy_list = self.proxy.ip
-                    logging.info('New proxy list: \n%s', self.proxy_list)
+            if self.proxy.get_proxy():
+                self.proxy_list = self.proxy.ip
+                logging.info('New proxy list: \n%s', self.proxy_list)
             self.proxy_server = self.proxy_list[-1]
             self.proxy_list = self.proxy_list[0:-1]
             logging.info('Choose proxy: %s', self.proxy_server)
@@ -298,7 +312,7 @@ class AntiuserSpider:
             await self.save_data(data)
 
 async def main():
-    spider = AntiuserSpider(ACCOUNT, download_delay = 3000)
+    spider = AntiuserSpider(ACCOUNT, download_delay = 1000)
     await spider.choose_user()
     await spider.choose_proxy()
     await spider.parse_login(LOGIN_URL, BASE_URL, spider.username, spider.password)
